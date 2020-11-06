@@ -319,7 +319,7 @@ class Observer(object):
         Examples
         --------
         Convert a localized `~datetime.datetime` to a `~astropy.time.Time`
-        object. Non-localized datetimes are assumed to be UTC.
+        object. For non-localized datetimes the timezone is infered from self.timezone.
         <Time object: scale='utc' format='datetime' value=1999-12-31 06:00:00>
 
         >>> from astroplan import Observer
@@ -519,7 +519,7 @@ class Observer(object):
     @u.quantity_input(horizon=u.deg)
     def _horiz_cross(self, t, alt, rise_set, horizon=0*u.degree):
         """
-        Find time ``t`` when values in array ``a`` go from
+        Find time ``t`` when values in array ``alt`` go from
         negative to positive or positive to negative (exclude endpoints)
 
         ``return_limits`` will return nearest times to zero-crossing.
@@ -544,14 +544,15 @@ class Observer(object):
         -------
         Returns the lower and upper limits on the time and altitudes
         of the horizon crossing. The altitude limits have shape (M, ...) and the
-        time limits have shape (...). These arrays aresuitable for interpolation
+        time limits have shape (...). These arrays are suitable for interpolation
         to find the horizon crossing time.
         """
         # handle different cases by enforcing standard shapes on
         # the altitude grid
         finesse_time_indexes = False
         if alt.ndim == 1:
-            raise ValueError('Must supply more at least a 2D grid of altitudes')
+            raise ValueError('Must supply more at least a 2D grid of altitudes'
+                             'even if last dim as size 1')
         elif alt.ndim == 2:
             # TODO: this test for ndim=2 doesn't work. if times is e.g (2,5)
             # then alt will have ndim=3, but shape (100, 2, 5) so grid
@@ -559,7 +560,7 @@ class Observer(object):
             ntargets = alt.shape[1]
             ngrid = alt.shape[0]
             unit = alt.unit
-            alt = np.broadcast_to(alt, (ntargets, ngrid, ntargets)).T
+            alt = np.broadcast_to(alt, (ntargets, ngrid, ntargets)).T  # TODO: Why ?
             alt = alt*unit
             extra_dimension_added = True
             if t.shape[1] == 1:
@@ -580,10 +581,12 @@ class Observer(object):
         alt_lims2 = u.Quantity(np.zeros(output_shape), unit=u.deg)
         jd_lims1 = np.zeros(output_shape)
         jd_lims2 = np.zeros(output_shape)
+
+        # Deal with non crossing
         if np.any(noncrossing_indices):
             for target_index in set(np.where(noncrossing_indices)[0]):
                 warnmsg = ('Target with index {} does not cross horizon={} within '
-                           '24 hours'.format(target_index, horizon))
+                           '24 hours'.format(target_index, horizon))  # TODO: Why within 24 h? It depends on the time you provided, doesn't it ?
                 if (alt[target_index, ...] > horizon).all():
                     warnings.warn(warnmsg, TargetAlwaysUpWarning)
                 else:
@@ -655,7 +658,7 @@ class Observer(object):
         """
         slope = (alt_after-alt_before)/((jd_after - jd_before)*u.d)
         crossing_jd = (jd_after*u.d - ((alt_after - horizon)/slope))
-        crossing_jd[np.isnan(crossing_jd)] = u.d*MAGIC_TIME.jd
+        crossing_jd[np.isnan(crossing_jd)] = u.d*MAGIC_TIME.jd  # Why?
         return np.squeeze(Time(crossing_jd, format='jd'))
 
     def _altitude_trig(self, LST, target, grid_times_targets=False):
@@ -1158,6 +1161,8 @@ class Observer(object):
         >>> print("ISO: {0.iso}, JD: {0.jd}".format(sun_rise)) # doctest: +SKIP
         ISO: 2001-02-02 14:02:50.554, JD: 2451943.08531
         """
+        if not isinstance(time, Time):
+            time = Time(time)
         return self.target_rise_time(time, get_sun(time), which, horizon)
 
     @u.quantity_input(horizon=u.deg)
@@ -1794,7 +1799,10 @@ class Observer(object):
         times : `~astropy.time.Time`
             A tuple of times corresponding to the start and end of current night
         """
-        current_time = Time.now() if time is None else time
+        if time is None:
+            current_time = Time.now()
+        elif not isinstance(time, Time):
+            time = Time(time)
         night_mask = self.is_night(current_time, horizon=horizon, obswl=obswl)
         sun_set_time = self.sun_set_time(current_time, which='next', horizon=horizon)
 
