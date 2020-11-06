@@ -16,11 +16,12 @@ from astropy.time import Time
 from astropy.table import Table
 
 from .utils import time_grid_from_range, stride_array
-from .constraints import AltitudeConstraint, AirmassConstraint
+from .constraints import AltitudeConstraint
 from .target import get_skycoord
 
-__all__ = ['ObservingBlock', 'TransitionBlock', 'Schedule', 'Slot', 'Scheduler',
-           'SequentialScheduler', 'PriorityScheduler', 'Transitioner', 'Scorer']
+__all__ = ['ObservingBlock', 'TransitionBlock', 'Schedule', 'Slot',
+           'Scheduler', 'SequentialScheduler', 'PriorityScheduler',
+           'Transitioner', 'Scorer']
 
 
 class ObservingBlock(object):
@@ -299,7 +300,8 @@ class Schedule(object):
                 ra.append('')
                 dec.append('')
                 config.append('')
-        return Table([target_names, start_times, end_times, durations, ra, dec, config],
+        return Table([target_names, start_times, end_times, durations,
+                      u.Quantity(ra), u.Quantity(dec), config],
                      names=('target', 'start time (UTC)', 'end time (UTC)',
                             'duration (minutes)', 'ra', 'dec', 'configuration'))
 
@@ -507,8 +509,10 @@ class Scheduler(object):
         self.constraints = constraints
         self.observer = observer
         self.transitioner = transitioner
-        if not isinstance(self.transitioner, Transitioner):
-            raise ValueError("A Transitioner is required")
+
+        if not hasattr(self.transitioner, '__call__'):
+            raise ValueError("A callable Transitioner is required")
+
         self.gap_time = gap_time
         self.time_resolution = time_resolution
 
@@ -566,7 +570,7 @@ class Scheduler(object):
             objects with populated ``start_time`` and ``end_time`` or ``duration`` attributes.
         """
         raise NotImplementedError
-        return schedule
+        # return schedule
 
     @classmethod
     @u.quantity_input(duration=u.second)
@@ -994,7 +998,6 @@ class Transitioner(object):
             from .constraints import _get_altaz
             from .target import get_skycoord
             if oldblock.target != newblock.target:
-                from .target import get_skycoord
                 targets = get_skycoord([oldblock.target, newblock.target])
                 aaz = _get_altaz(start_time, observer, targets)['altaz']
                 sep = aaz[0].separation(aaz[1])

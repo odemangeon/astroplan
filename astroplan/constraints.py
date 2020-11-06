@@ -15,7 +15,7 @@ import warnings
 # Third-party
 from astropy.time import Time
 import astropy.units as u
-from astropy.coordinates import get_body, get_sun, get_moon, SkyCoord
+from astropy.coordinates import get_body, get_sun, get_moon, Galactic, SkyCoord
 from astropy import table
 
 import numpy as np
@@ -28,12 +28,12 @@ from .target import get_skycoord
 
 __all__ = ["AltitudeConstraint", "AirmassConstraint", "AtNightConstraint",
            "is_observable", "is_always_observable", "time_grid_from_range",
-           "SunSeparationConstraint", "MoonSeparationConstraint",
-           "MoonIlluminationConstraint", "LocalTimeConstraint",
-           "PrimaryEclipseConstraint", "SecondaryEclipseConstraint",
-           "Constraint", "TimeConstraint", "observability_table",
-           "months_observable", "max_best_rescale", "min_best_rescale",
-           "PhaseConstraint", "is_event_observable"]
+           "GalacticLatitudeConstraint", "SunSeparationConstraint",
+           "MoonSeparationConstraint", "MoonIlluminationConstraint",
+           "LocalTimeConstraint", "PrimaryEclipseConstraint",
+           "SecondaryEclipseConstraint", "Constraint", "TimeConstraint",
+           "observability_table", "months_observable", "max_best_rescale",
+           "min_best_rescale", "PhaseConstraint", "is_event_observable"]
 
 
 def _make_cache_key(times, targets):
@@ -482,6 +482,40 @@ class AtNightConstraint(Constraint):
         return mask
 
 
+class GalacticLatitudeConstraint(Constraint):
+    """
+    Constrain the distance between the Galactic plane and some targets.
+    """
+
+    def __init__(self, min=None, max=None):
+        """
+        Parameters
+        ----------
+        min : `~astropy.units.Quantity` or `None` (optional)
+            Minimum acceptable Galactic latitude of target (inclusive).
+            `None` indicates no limit.
+        max : `~astropy.units.Quantity` or `None` (optional)
+            Minimum acceptable Galactic latitude of target (inclusive).
+            `None` indicates no limit.
+        """
+        self.min = min
+        self.max = max
+
+    def compute_constraint(self, times, observer, targets):
+        separation = abs(targets.transform_to(Galactic).b)
+
+        if self.min is None and self.max is not None:
+            mask = self.max >= separation
+        elif self.max is None and self.min is not None:
+            mask = self.min <= separation
+        elif self.min is not None and self.max is not None:
+            mask = ((self.min <= separation) & (separation <= self.max))
+        else:
+            raise ValueError("No max and/or min specified in "
+                             "GalacticLatitudeConstraint.")
+        return mask
+
+
 class SunSeparationConstraint(Constraint):
     """
     Constrain the distance between the Sun and some targets.
@@ -495,7 +529,7 @@ class SunSeparationConstraint(Constraint):
             Minimum acceptable separation between Sun and target (inclusive).
             `None` indicates no limit.
         max : `~astropy.units.Quantity` or `None` (optional)
-            Minimum acceptable separation between Sun and target (inclusive).
+            Maximum acceptable separation between Sun and target (inclusive).
             `None` indicates no limit.
         """
         self.min = min
@@ -738,7 +772,7 @@ class LocalTimeConstraint(Constraint):
             max_time = datetime.time(23, 59, 59)
 
         # If time limits occur on same day:
-        if self.min < self.max:
+        if min_time < max_time:
             try:
                 mask = np.array([min_time <= t.time() <= max_time for t in times.datetime])
             except BaseException:                # use np.bool so shape queries don't cause problems

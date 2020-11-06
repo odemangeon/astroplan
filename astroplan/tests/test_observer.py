@@ -17,7 +17,7 @@ from astropy.coordinates import (EarthLocation, Latitude, Longitude, SkyCoord,
 from astropy.tests.helper import assert_quantity_allclose
 
 # Package
-from ..observer import Observer, MAGIC_TIME
+from ..observer import Observer
 from ..target import FixedTarget
 from ..exceptions import TargetAlwaysUpWarning, TargetNeverUpWarning
 
@@ -69,7 +69,7 @@ def test_Observer_altaz():
     # Calculate altitude/azimuth with astroplan
     location = EarthLocation.from_geodetic(longitude, latitude, elevation)
     astroplan_obs = Observer(name='Observatory', location=location,
-                             pressure=pressure*u.bar)
+                             pressure=pressure)
     astroplan_vega = FixedTarget(vega_coords)
     altaz = astroplan_obs.altaz(time, astroplan_vega)
     astroplan_altitude = altaz.alt
@@ -152,7 +152,8 @@ def test_rise_set_transit_nearest_vector():
     vega = SkyCoord(279.23473479*u.deg, 38.78368896*u.deg)
     mira = SkyCoord(34.83663376*u.deg, -2.97763767*u.deg)
     sirius = SkyCoord(101.28715533*u.deg, -16.71611586*u.deg)
-    sc_list = [vega, mira, sirius]
+    polaris = SkyCoord(37.95456067*u.degree, 89.26410897*u.degree)
+    sc_list = [vega, mira, sirius, polaris]
 
     location = EarthLocation(10*u.deg, 45*u.deg, 0*u.m)
     time = Time('1995-06-21 00:00:00')
@@ -162,28 +163,34 @@ def test_rise_set_transit_nearest_vector():
     vega_rise = obs.target_rise_time(time, vega)
     mira_rise = obs.target_rise_time(time, mira)
     sirius_rise = obs.target_rise_time(time, sirius)
+    polaris_rise = obs.target_rise_time(time, polaris)
 
     assert rise_vector[0] == vega_rise
     assert rise_vector[1] == mira_rise
     assert rise_vector[2] == sirius_rise
+    assert rise_vector[3].value.mask and polaris_rise.value.mask
 
     set_vector = obs.target_set_time(time, sc_list)
     vega_set = obs.target_set_time(time, vega)
     mira_set = obs.target_set_time(time, mira)
     sirius_set = obs.target_set_time(time, sirius)
+    polaris_set = obs.target_set_time(time, polaris)
 
     assert set_vector[0] == vega_set
     assert set_vector[1] == mira_set
     assert set_vector[2] == sirius_set
+    assert set_vector[3].value.mask and polaris_set.value.mask
 
     transit_vector = obs.target_meridian_transit_time(time, sc_list)
     vega_trans = obs.target_meridian_transit_time(time, vega)
     mira_trans = obs.target_meridian_transit_time(time, mira)
     sirius_trans = obs.target_meridian_transit_time(time, sirius)
+    polaris_trans = obs.target_meridian_transit_time(time, polaris)
 
     assert transit_vector[0] == vega_trans
     assert transit_vector[1] == mira_trans
     assert transit_vector[2] == sirius_trans
+    assert transit_vector[3] == polaris_trans
 
 
 def print_pyephem_altaz(latitude, longitude, elevation, time, pressure,
@@ -270,7 +277,7 @@ def test_parallactic_angle():
 
 
 def print_pyephem_parallactic_angle():
-    lat = 19.826218*u.deg
+    # lat = 19.826218*u.deg
     lon = -155.471999*u.deg
     time = Time('2015-01-01 00:00:00')
     LST = time.sidereal_time('mean', longitude=lon)
@@ -779,7 +786,6 @@ def test_solar_transit_convenience_methods():
     pressure = 0 * u.bar
     location = EarthLocation.from_geodetic(lon, lat, elevation)
     time = Time('2000-01-01 12:00:00')
-    from astropy.coordinates import get_sun
     obs = Observer(location=location, pressure=pressure)
 
     # Compute next/previous noon/midnight using generic calc_transit methods
@@ -1002,7 +1008,18 @@ def test_TargetAlwaysUpWarning(recwarn):
 
     w = recwarn.pop(TargetAlwaysUpWarning)
     assert issubclass(w.category, TargetAlwaysUpWarning)
-    assert no_time == MAGIC_TIME
+    assert no_time.mask
+
+    # Regression test: make sure 'nearest' also works
+    no_time = obs.target_rise_time(time, polaris, which='nearest')
+
+    # Cycle back through warnings until a TargetAlwaysUpWarning is hit
+    # (other warnings can also be raised here)
+    while not issubclass(w.category, TargetAlwaysUpWarning):
+        w = recwarn.pop(TargetAlwaysUpWarning)
+
+    assert issubclass(w.category, TargetAlwaysUpWarning)
+    assert no_time.mask
 
 
 def test_TargetNeverUpWarning(recwarn):
@@ -1018,7 +1035,7 @@ def test_TargetNeverUpWarning(recwarn):
 
     w = recwarn.pop(TargetNeverUpWarning)
     assert issubclass(w.category, TargetNeverUpWarning)
-    assert no_time == MAGIC_TIME
+    assert no_time.mask
 
 
 def test_mixed_rise_and_dont_rise():
@@ -1034,9 +1051,9 @@ def test_mixed_rise_and_dont_rise():
     with pytest.warns(TargetAlwaysUpWarning) as recwarn:
         rise_times = obs.target_rise_time(time, targets, which='next')
 
-    assert rise_times[1] == MAGIC_TIME
+    assert rise_times.mask[1]
 
-    targets_that_rise = np.array(targets)[rise_times != MAGIC_TIME]
+    targets_that_rise = np.array(targets)[~rise_times.mask]
     assert np.all([vega, sirius] == targets_that_rise)
 
     w = recwarn.pop(TargetAlwaysUpWarning)
@@ -1234,7 +1251,7 @@ def test_tonight():
 
     post_civil_sunset = Time('2016-08-08 05:00:00')
     during_twilight = obs.tonight(time=post_civil_sunset, horizon=horizon)
-    during_twilight_wo_horizon = obs.tonight(time=post_civil_sunset)
+    during_twilight_wo_horizon = obs.tonight(time=post_civil_sunset)  # noqa
 
     # Get correct astro sunset if checking after civil sunset
     assert (abs(astro_sunset.datetime - during_twilight[0].datetime) <
@@ -1279,7 +1296,7 @@ def test_moon_rise_set():
     lat = '42:00:00'
     lon = '-70:00:00'
     elevation = 0.0 * u.m
-    pressure = 0 * u.bar
+    # pressure = 0 * u.bar
     location = EarthLocation.from_geodetic(lon, lat, elevation)
 
     obs = Observer(location=location)
@@ -1298,3 +1315,32 @@ def test_moon_rise_set():
             datetime.timedelta(minutes=threshold_minutes))
     assert (abs(pyephem_prev_set - astroplan_prev_set.datetime) <
             datetime.timedelta(minutes=threshold_minutes))
+
+
+mmto_sunsets = [
+    Time('2019-01-01 00:31'),
+    Time('2019-02-01 00:58'),
+    Time('2019-03-01 01:21'),
+    Time('2019-04-01 01:43'),
+    Time('2019-05-01 02:03'),
+    Time('2019-06-01 02:24'),
+]
+
+
+@pytest.mark.parametrize('mmto_sunset', mmto_sunsets)
+def test_sun_set_vs_mmto_almanac(mmto_sunset):
+    """
+    Validates issue: https://github.com/astropy/astroplan/issues/409
+
+    MMTO times to the nearest minute from the MMTO Almanac:
+    http://www.mmto.org/sites/default/files/almanac_2019.pdf
+    """
+    loc = EarthLocation.from_geodetic(-110.8850*u.deg, 31.6883 * u.deg,
+                                      2608 * u.m)
+    mmt = Observer(location=loc, pressure=0*u.bar)
+
+    # Compute equivalent time with astroplan
+    astroplan_sunset = mmt.sun_set_time(mmto_sunset - 10*u.min,
+                                        horizon=-0.8333*u.deg, which='next')
+
+    assert abs(mmto_sunset - astroplan_sunset) < 1 * u.min

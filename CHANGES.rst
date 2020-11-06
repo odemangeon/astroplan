@@ -1,8 +1,41 @@
-0.5 (unreleased)
+0.8 (unreleased)
+----------------
+
+- No changes yet.
+
+0.7 (2020-10-27)
+----------------
+
+- Fix compatibility with Astropy 4.X
+
+
+0.6 (2019-10-08)
+----------------
+
+- Added documentation for reproducing MMTO sun rise/set times [#434]
+
+- Deprecation of ``MAGIC_TIME`` variable, which used to be returned for targets
+  that don't rise or set [#435]
+
+- Replace deprecated astroquery service [#431]
+
+- Fix for the broken IERS patch [#418, #425]
+
+- Add ``GalacticLatitudeConstraint`` to constrain the galactic latitudes of
+  targets. This can be useful for planning surveys for which crowding due to
+  Galactic point sources is an issue. [#413]
+
+
+- Add ``n_grid_points`` keyword argument to rise/set/transit functions which
+  allows usersto trade off precision for speed. [#424]
+
+0.5 (2019-07-08)
 ----------------
 
 - ``observability_table`` now accepts scalars as ``time_range`` arguments, and
   gives ``'time observable'`` in this case in the resulting table. [#350]
+
+- Bug fixes [#414, #412, #407, #401]
 
 0.4 (2017-10-23)
 ----------------
